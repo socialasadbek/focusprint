@@ -1,5 +1,5 @@
-// Vercel serverless function: sends the order to Telegram (personal chat + group).
-// Env vars: BOT_TOKEN, CHAT_ID, GROUP_CHAT_ID
+// Vercel serverless function: sends the order to the Telegram GROUP only.
+// Env vars: BOT_TOKEN, CHAT_ID  (CHAT_ID = guruh ID, -100... bilan boshlanadi)
 const esc = (s) => String(s || '-').slice(0, 500).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
 module.exports = async (req, res) => {
@@ -14,9 +14,8 @@ module.exports = async (req, res) => {
   const digits = String(d.phone || '').replace(/\D/g, '');
   if (!d.name || !d.service || digits.length < 9 || digits.length > 12) return res.status(400).json({ ok: false });
 
-  const { BOT_TOKEN, CHAT_ID, GROUP_CHAT_ID } = process.env;
-  const targets = [CHAT_ID, GROUP_CHAT_ID].filter(Boolean);
-  if (!BOT_TOKEN || !targets.length) return res.status(500).json({ ok: false });
+  const { BOT_TOKEN, CHAT_ID } = process.env;
+  if (!BOT_TOKEN || !CHAT_ID) return res.status(500).json({ ok: false });
 
   const text = [
     '<b>Yangi buyurtma (sayt)</b>',
@@ -29,14 +28,17 @@ module.exports = async (req, res) => {
     "Qo'shimcha: " + esc(d.details),
   ].join('\n');
 
-  const send = (chat_id) =>
-    fetch('https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage', {
+  try {
+    const r = await fetch('https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id, text, parse_mode: 'HTML' }),
-    }).then((r) => r.ok);
-
-  const results = await Promise.allSettled(targets.map(send));
-  const okCount = results.filter((x) => x.status === 'fulfilled' && x.value).length;
-  return res.status(okCount ? 200 : 502).json({ ok: okCount > 0 });
+      body: JSON.stringify({ chat_id: CHAT_ID, text, parse_mode: 'HTML' }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) console.error('Telegram error:', j.description);
+    return res.status(r.ok ? 200 : 502).json({ ok: r.ok });
+  } catch (e) {
+    console.error('Send failed:', e);
+    return res.status(502).json({ ok: false });
+  }
 };
